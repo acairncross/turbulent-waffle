@@ -1,46 +1,59 @@
 import Vector3
 import Data.Array
 import Data.Function (on)
+import Data.Maybe (fromMaybe)
 import Data.List (intercalate, minimumBy)
-import Text.Printf (printf)
+import Control.Monad (liftM, liftM2, sequence)
 
 type Point = Vector3
 type Direction = Vector3
 type Radius = Double
-type Sphere = (Point,Double)
+type Sphere = (Point,Radius)
+type PointLight = Point
 type Ray = (Point,Direction)
-type ShadowRay = (Ray,Sphere)
+type Intersection = (Point,Direction)
+type ReflIntersection = (PointLight,Intersection)
 
 width = 500 :: Int
 height = 500 :: Int
 
 spheres :: [Sphere]
-spheres = [((0, 0, 380), 30),
+spheres = [((-25, -25, 380), 30),
            ((100, 0, 500), 80),
            ((-50, 150, 300), 50),
            ((-100, -100, 700), 100),
            ((-100, -100, 500), 15)]
 
-light :: Vector3
-light = (-100, 0, 250)
+α = 3 :: Double
 
-traceRay :: Ray -> Maybe Double
-traceRay (o,l) =
-  let shadowRay (s,d) = let o2 = o⊕(scale d l)
-                            l2 = normalize (light⊖o2)
-                        in  ((o2,l2),s)
-      intensity ((o2,l2),(c,r)) =
-        maybe (l2⋅(normalize $ o2⊖c)) (const 0) (intersect (o2,l2) spheres)
-  in  fmap (intensity . shadowRay) (intersect (o,l) spheres)
+lights :: [Point]
+lights = [(-100, 0, 250), (500, 100, 1000)]
 
-intersect :: Ray -> [Sphere] -> Maybe (Sphere,Double)
-intersect ray [] = Nothing
-intersect ray ss =
-  let s = minimumBy (maybeCompare `on` (intersectSphere ray)) ss
-  in  fmap (\d -> (s,d)) (intersectSphere ray s)
+raytrace :: Ray -> Double
+raytrace (o,l) =
+  let intersection = (intersect (o,l) spheres)
+      reflIntersect light =
+        (\(p,n) -> let shadowRay = (p,normalize (light⊖p))
+                       shadowIntersection = intersect shadowRay spheres
+                   in  case shadowIntersection of
+                              Nothing -> Just (light,(p,n))
+                              Just _ -> Nothing)
+      intensity (light,(p,n)) =
+        let ŀ = normalize (light⊖p)
+            ṙ = ((2*(ŀ⋅n)) `scale` n) ⊖ ŀ
+        in  (ŀ⋅n) + (ṙ⋅(neg l))**α + raytrace (p,ṙ)
+  in  sum (map ((fromMaybe 0) . (liftM intensity))
+               (sequence (map ((=<<) . reflIntersect) lights) intersection))
 
--- Like the derived 'compare' for Maybe, but with Nothing as the largest
--- instead of the smallest.
+intersect :: Ray -> [Sphere] -> Maybe Intersection
+intersect (o,l) [] = Nothing
+intersect (o,l) ss =
+  let (c,r) = minimumBy (maybeCompare `on` (intersectSphere (o,l))) ss
+      distToIntersection = (\d -> let point = o⊕(d `scale` l)
+                                  in  (point, normalize (point⊖c)))
+  in  fmap distToIntersection (intersectSphere (o,l) (c,r))
+
+-- Nothing is max instead of min
 maybeCompare :: Ord a => Maybe a -> Maybe a -> Ordering
 (Just x) `maybeCompare` (Just y) = x `compare` y
 (Just x) `maybeCompare` Nothing = LT
@@ -62,10 +75,13 @@ imageToWorld (i,j) = ((fromIntegral j) - (fromIntegral width)/2,
                       0)
 
 image :: [[Int]]
-image = [[ (toPixel . traceRay) (imageToWorld (i,j), (0,0,1))
-           | j <- [0..width-1] ]
-           | i <- [0..height-1] ]
-          where toPixel = maybe 0 (\x -> floor (255 * x))
+image = let matmax xss = maximum [(maximum xs) | xs <- xss]
+            matscale c xss  = [[c*x | x <- xs] | xs <- xss]
+            matfloor xss = [[floor x | x <- xs] | xs <- xss]
+            mat = [[ raytrace (imageToWorld (i,j), (0,0,1))
+                   | j <- [0..width-1] ]
+                   | i <- [0..height-1] ]
+        in  matfloor $ matscale (255/(matmax mat)) mat
 
 main = do
   putStrLn "P2"
