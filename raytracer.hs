@@ -19,15 +19,17 @@ width = 500 :: Int
 height = 500 :: Int
 
 surfaces :: [Surface]
-surfaces = [Sphere (-100,0,200) 100, Plane (0,-40,0) (0,1,0)]
+surfaces = [Sphere (-100,0,200) 100,
+            Sphere (150, 0, 450) 100,
+            Plane (0,-40,0) (0,1,0)]
 
 α = 100 :: Double
 
 lights :: [Point]
-lights = [(200,300,0)]
+lights = [(200,300,0), (400, 0, 50)]
 
-raytrace :: Ray -> Double
-raytrace (o,l) =
+raytrace :: Int -> Ray -> Double
+raytrace depth (o,l) =
   let intersection = (intersect (o,l) surfaces)
       reflIntersect light =
         (\(p,n) -> let shadowRay = (p,normalize (light⊖p))
@@ -38,7 +40,7 @@ raytrace (o,l) =
       intensity (light,(p,n)) =
         let ŀ = normalize (light⊖p)
             ṙ = ((2*(ŀ⋅n)) `scale` n) ⊖ ŀ
-        in  (ŀ⋅n) + (ṙ⋅(neg l))**α + raytrace (p,ṙ)
+        in  (ŀ⋅n) + (ṙ⋅(neg l))**α + if depth < 3 then raytrace (depth+1) (p,ṙ) else 0
   in  sum (map ((fromMaybe 0) . (liftM intensity))
                (sequence (map ((=<<) . reflIntersect) lights) intersection))
 
@@ -81,10 +83,11 @@ image :: [[Int]]
 image = let matmax xss = maximum [(maximum xs) | xs <- xss]
             matscale c xss  = [[c*x | x <- xs] | xs <- xss]
             matfloor xss = [[floor x | x <- xs] | xs <- xss]
-            mat = [[ raytrace (imageToWorld (i,j), normalize ((imageToWorld (i,j))⊖(0,0,-1000)))
+            matclamp n xss = [[min n x | x <- xs] | xs <- xss]
+            mat = [[ raytrace 0 (imageToWorld (i,j), normalize ((imageToWorld (i,j))⊖(0,0,-1000)))
                    | j <- [0..width-1] ]
                    | i <- [0..height-1] ]
-        in  matfloor $ matscale (255/(matmax mat)) mat
+        in  matclamp 255 $ matfloor $ matscale (2*255/(matmax mat)) mat
 
 main = do
   putStrLn "P2"
