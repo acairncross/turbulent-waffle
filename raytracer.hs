@@ -21,40 +21,41 @@ width = 500 :: Int
 height = 500 :: Int
 
 surfaces :: [Surface]
-surfaces = [Sphere (-100,0,200) 100,
-            Sphere (150, 0, 450) 100,
-            Plane (0,-40,0) (0,1,0)]
+surfaces = [Sphere (-100,-100,300) 100,
+            Sphere (150,-100,450) 50,
+            Plane (0,-50,0) (0,1,0)]
 
 lights :: [Point]
 lights = [(200,300,0), (400, 0, 50)]
 
 raytrace :: Int -> Ray -> Double
 raytrace depth (o,l) =
-  let intersection = (intersect (o,l) surfaces)
+  let intersection = intersect (o,l) surfaces
       reflIntersect light =
-        (\(p,n) -> let shadowRay = (p,normalize (light⊖p))
-                       shadowIntersection = intersect shadowRay surfaces
-                   in  case shadowIntersection of
-                              Nothing -> Just (light,(p,n))
-                              Just (p',n') -> if mag (p'⊖p) > mag (light⊖p)
-                                                 then Just (light,(p,n))
-                                                 else Nothing)
+        (\(p,n) ->
+            let shadowRay = (p,normalize (light⊖p))
+                shadowIntersection = intersect shadowRay surfaces
+                reflIntersection = (light,(p,n))
+            in  case shadowIntersection of
+                      Nothing -> Just reflIntersection
+                      Just (p',n') -> if mag (p'⊖p) < mag (light⊖p)
+                                          then Nothing
+                                          else Just reflIntersection)
       intensity (light,(p,n)) =
-        let ŀ = normalize (light⊖p)
-            ṙ = ((2*(ŀ⋅n)) `scale` n) ⊖ ŀ
-        in  (ŀ⋅n) + (ṙ⋅(neg l))**α + if depth < 3 then raytrace (depth+1) (p,ṙ) else 0
-  in  sum (map ((fromMaybe 0) . (liftM intensity))
-               (sequence (map ((=<<) . reflIntersect) lights) intersection))
-      
+        let l' = normalize (light⊖p)
+            n' = n
+            r' = ((2*(l'⋅n')) `scale` n') ⊖ l'
+            v' = neg l
+        in  (l'⋅n') + (if depth < 3 then raytrace (depth+1) (p,r') else 0)*(r'⋅v')**α
+  in sum (map (maybe 0 intensity)
+      (sequence (map ((=<<) . reflIntersect) lights) intersection))
 
 intersect :: Ray -> [Surface] -> Maybe Intersection
 intersect (o,l) [] = Nothing
 intersect (o,l) ss =
   let s = minimumBy (maybeCompare `on` (intersectSurface (o,l))) ss
       distToIntersection = (\d -> let point = o⊕(d `scale` l)
-                                  in  case s of
-                                        Sphere c r -> (point, normalize (point⊖c))
-                                        Plane p n -> (point, n))
+                                  in  (point,normal point s))
   in  fmap distToIntersection (intersectSurface (o,l) s)
 
 -- Nothing is max instead of min
@@ -82,6 +83,10 @@ imageToWorld :: (Int,Int) -> Vector3
 imageToWorld (i,j) = ((fromIntegral j) - (fromIntegral width)/2,
                       (fromIntegral height)/2 - (fromIntegral i),
                       0)
+
+normal :: Point -> Surface -> Direction
+normal p (Sphere c r) = normalize $ p⊖c
+normal _ (Plane p n) = n
 
 image :: [[Int]]
 image = let matmax xss = maximum [(maximum xs) | xs <- xss]

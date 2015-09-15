@@ -40,3 +40,5 @@ mag u = sqrt $ u⋅u
 
 normalize :: Vector3 -> Vector3
 normalize u = scale (1/(mag u)) u
+
+zero = (0,0,0) :: Vector3
