@@ -15,6 +15,8 @@ type ReflIntersection = (PointLight,Intersection)
 
 data Surface = Sphere Point Radius | Plane Point Direction
 
+α = 100 :: Double
+
 width = 500 :: Int
 height = 500 :: Int
 
@@ -22,8 +24,6 @@ surfaces :: [Surface]
 surfaces = [Sphere (-100,0,200) 100,
             Sphere (150, 0, 450) 100,
             Plane (0,-40,0) (0,1,0)]
-
-α = 100 :: Double
 
 lights :: [Point]
 lights = [(200,300,0), (400, 0, 50)]
@@ -36,13 +36,16 @@ raytrace depth (o,l) =
                        shadowIntersection = intersect shadowRay surfaces
                    in  case shadowIntersection of
                               Nothing -> Just (light,(p,n))
-                              Just _ -> Nothing)
+                              Just (p',n') -> if mag (p'⊖p) > mag (light⊖p)
+                                                 then Just (light,(p,n))
+                                                 else Nothing)
       intensity (light,(p,n)) =
         let ŀ = normalize (light⊖p)
             ṙ = ((2*(ŀ⋅n)) `scale` n) ⊖ ŀ
         in  (ŀ⋅n) + (ṙ⋅(neg l))**α + if depth < 3 then raytrace (depth+1) (p,ṙ) else 0
   in  sum (map ((fromMaybe 0) . (liftM intensity))
                (sequence (map ((=<<) . reflIntersect) lights) intersection))
+      
 
 intersect :: Ray -> [Surface] -> Maybe Intersection
 intersect (o,l) [] = Nothing
@@ -61,6 +64,7 @@ maybeCompare :: Ord a => Maybe a -> Maybe a -> Ordering
 Nothing `maybeCompare` (Just x) = GT
 Nothing `maybeCompare` Nothing = EQ
 
+-- Closest (in forwards direction) part of the surface that intersects, if any
 intersectSurface :: Ray -> Surface -> Maybe Double
 intersectSurface (o,l) (Sphere c r)
   | discriminant > 0 && dMinus > 0.001 = Just dMinus
@@ -69,10 +73,10 @@ intersectSurface (o,l) (Sphere c r)
   where discriminant = (l⋅(o⊖c))**2 - ((o⊖c)⋅(o⊖c)) + r**2
         dMinus = -(l⋅(o⊖c)) - sqrt discriminant
         dPlus = -(l⋅(o⊖c)) + sqrt discriminant
-intersectSurface (o,l) (Plane p n) =
-  let d = ((p⊖l)⋅n)/(l⋅n)
-  in if abs (l⋅n) == 0 || d < 0.001 then Nothing else Just d
-
+intersectSurface (o,l) (Plane p n)
+  | abs (l⋅n) /= 0 && d > 0.001 = Just d
+  | otherwise = Nothing
+  where d = ((p⊖l)⋅n)/(l⋅n)
 
 imageToWorld :: (Int,Int) -> Vector3
 imageToWorld (i,j) = ((fromIntegral j) - (fromIntegral width)/2,
